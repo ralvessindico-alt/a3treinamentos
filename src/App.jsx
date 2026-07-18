@@ -23,6 +23,7 @@ export default function App() {
   const [userProgress, setUserProgress] = useState({});
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [userRole, setUserRole] = useState(null);
 
   const [newUserForm, setNewUserForm] = useState({ nome: "", email: "", cpf: "" });
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
@@ -40,17 +41,20 @@ export default function App() {
     const checkSession = async () => {
       const { data } = await supabase.auth.getSession();
       setSession(data.session);
-      setLoading(false);
 
       if (data.session) {
         await fetchUserData(data.session);
       }
+      setLoading(false);
     };
 
     checkSession();
 
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
+      if (session) {
+        fetchUserData(session);
+      }
     });
 
     return () => authListener?.subscription.unsubscribe();
@@ -60,13 +64,25 @@ export default function App() {
     if (!sess) return;
 
     try {
-      const { data: userProfile } = await supabase
+      // FIX: Buscar o role diretamente do banco
+      const { data: userProfile, error: userError } = await supabase
         .from("users")
-        .select("*")
+        .select("role, id")
         .eq("id", sess.user.id)
         .single();
 
-      if (userProfile?.role === "admin") {
+      if (userError) {
+        console.error("Erro ao buscar perfil:", userError);
+        setScreen("colaborador");
+        await fetchUserProgress(sess.user.id);
+        return;
+      }
+
+      // FIX: Salvar role no estado
+      setUserRole(userProfile.role);
+
+      // FIX: Verificar role e decidir tela
+      if (userProfile.role === "admin") {
         setScreen("admin");
         await fetchAllUsers();
       } else {
@@ -150,6 +166,7 @@ export default function App() {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setSession(null);
+    setUserRole(null);
     setScreen("login");
     setCurrentModule(null);
   };
